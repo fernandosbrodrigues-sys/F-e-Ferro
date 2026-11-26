@@ -1469,7 +1469,44 @@ const supabaseRestBase = rawSupabaseUrl
 const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
 const supabaseConfigured = Boolean(supabaseRestBase && supabaseKey);
 
-const sqliteStore = new SqliteStore();
+let sqliteStoreInstance: SqliteStore | null = null;
+function getSqliteStore(): SqliteStore {
+  if (!sqliteStoreInstance) {
+    sqliteStoreInstance = supabaseRequired
+      ? new SqliteStore(path.join(os.tmpdir(), 'ironlog-demo.db'))
+      : new SqliteStore();
+  }
+  return sqliteStoreInstance;
+}
+
+// When enabled (on Netlify), SQLite is only used as a temporary DEMO store while
+// Supabase is not configured (missing SUPABASE_URL / key). Its file lives in
+// per-instance /tmp storage, so demo data is lost on restart. Once Supabase is
+// configured, the app never falls back to SQLite.
+let supabaseRequired = false;
+export function requireSupabase() {
+  supabaseRequired = true;
+}
+
+class StorageUnavailableError extends Error {
+  status = 503;
+}
+
+function sqliteFallback(status: StorageStatus): { store: IronLogStore; status: StorageStatus } {
+  if (supabaseRequired && !status.supabaseConfigured) {
+    if (!sqliteStoreInstance) console.warn(
+      'IRON LOG: MODO DEMO — Supabase não configurado (defina SUPABASE_URL). Dados temporários não serão mantidos.'
+    );
+  } else if (supabaseRequired) {
+    const reason = !status.supabaseConfigured
+      ? 'Supabase não configurado (defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY).'
+      : status.supabaseNeedsSchema
+        ? 'Tabelas do Supabase ausentes. Execute supabase/schema.sql no SQL Editor do Supabase.'
+        : 'Não foi possível conectar ao Supabase. Tente novamente.';
+    throw new StorageUnavailableError(`Banco de dados indisponível: ${reason}`);
+  }
+  return { store: getSqliteStore(), status };
+}
 const supabaseStore = supabaseConfigured ? new SupabaseStore(supabaseRestBase, supabaseKey) : null;
 
 let cachedSupabaseReady = false;
@@ -1487,15 +1524,12 @@ function isMissingSchemaError(err: unknown): boolean {
 
 export async function getActiveStore(): Promise<{ store: IronLogStore; status: StorageStatus }> {
   if (!supabaseStore) {
-    return {
-      store: sqliteStore,
-      status: {
-        backend: 'sqlite',
-        supabaseConfigured: false,
-        supabaseReady: false,
-        supabaseNeedsSchema: false,
-      },
-    };
+    return sqliteFallback({
+      backend: 'sqlite',
+      supabaseConfigured: false,
+      supabaseReady: false,
+      supabaseNeedsSchema: false,
+    });
   }
 
   if (cachedSupabaseReady) {
@@ -1539,13 +1573,10 @@ export async function getActiveStore(): Promise<{ store: IronLogStore; status: S
     };
   }
 
-  return {
-    store: sqliteStore,
-    status: {
-      backend: 'sqlite',
-      supabaseConfigured: true,
-      supabaseReady: false,
-      supabaseNeedsSchema: cachedSupabaseNeedsSchema,
-    },
-  };
+  return sqliteFallback({
+    backend: 'sqlite',
+    supabaseConfigured: true,
+    supabaseReady: false,
+    supabaseNeedsSchema: cachedSupabaseNeedsSchema,
+  });
 }

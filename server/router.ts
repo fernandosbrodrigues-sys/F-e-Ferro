@@ -2,7 +2,16 @@ import crypto from 'node:crypto';
 import { getActiveStore, type IronLogStore } from './store.ts';
 import type { UserProfile, UserRole } from '../src/types.ts';
 
-const USERNAME_RE = /^[a-z0-9._-]{3,24}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const LEGACY_USERNAME_RE = /^[a-z0-9._-]{3,24}$/;
+
+function isValidEmail(val: string): boolean {
+  return val.length >= 5 && val.length <= 120 && EMAIL_RE.test(val);
+}
+
+function isValidLoginIdentifier(val: string): boolean {
+  return isValidEmail(val) || LEGACY_USERNAME_RE.test(val);
+}
 const SESSION_COOKIE = 'ironlog_session';
 
 function hashPassword(password: string): string {
@@ -32,7 +41,7 @@ async function ensureEnvAdmin() {
   const adminUser = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
   const adminPass = process.env.ADMIN_PASSWORD || '';
   if (!adminUser || !adminPass) return;
-  if (!USERNAME_RE.test(adminUser) || adminPass.length < 6) return;
+  if (!isValidLoginIdentifier(adminUser) || adminPass.length < 6) return;
 
   try {
     const { store } = await getActiveStore();
@@ -227,12 +236,12 @@ export async function handleApiRequest(req: Request): Promise<Response> {
 
     if (method === 'POST' && pathname === '/api/auth/claim-admin') {
       const body = await readJsonBody(req);
-      const username = String(body.username || '').trim().toLowerCase();
+      const email = String(body.email ?? body.username ?? '').trim().toLowerCase();
       const password = String(body.password || '');
       const confirmPassword = String(body.confirmPassword || '');
 
-      if (!USERNAME_RE.test(username)) {
-        return jsonResponse({ error: 'Use 3–24 caracteres (a-z, 0-9, ., _, -).' }, 400);
+      if (!isValidEmail(email)) {
+        return jsonResponse({ error: 'Informe um e-mail válido (ex: nome@sobrenome.com).' }, 400);
       }
       if (password.length < 6) {
         return jsonResponse({ error: 'A senha deve ter no mínimo 6 caracteres.' }, 400);
@@ -246,7 +255,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       const now = Date.now();
       const result = await store.createUserWithWorkouts({
         id: userId,
-        username,
+        username: email,
         password_hash: hashPassword(password),
         role: 'ADMIN',
         created_at: now,
@@ -257,7 +266,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
         return jsonResponse({ error: 'A conta ADMIN inicial já foi configurada.' }, 409);
       }
       if (result === 'USERNAME_EXISTS') {
-        return jsonResponse({ error: 'Nome de usuário já está em uso.' }, 409);
+        return jsonResponse({ error: 'Este e-mail já está em uso.' }, 409);
       }
 
       const token = crypto.randomBytes(32).toString('base64url');
@@ -270,12 +279,12 @@ export async function handleApiRequest(req: Request): Promise<Response> {
 
     if (method === 'POST' && pathname === '/api/auth/register') {
       const body = await readJsonBody(req);
-      const username = String(body.username || '').trim().toLowerCase();
+      const email = String(body.email ?? body.username ?? '').trim().toLowerCase();
       const password = String(body.password || '');
       const confirmPassword = String(body.confirmPassword || '');
 
-      if (!USERNAME_RE.test(username)) {
-        return jsonResponse({ error: 'Use 3–24 caracteres (a-z, 0-9, ., _, -).' }, 400);
+      if (!isValidEmail(email)) {
+        return jsonResponse({ error: 'Informe um e-mail válido (ex: nome@sobrenome.com).' }, 400);
       }
       if (password.length < 6) {
         return jsonResponse({ error: 'A senha deve ter no mínimo 6 caracteres.' }, 400);
@@ -289,14 +298,14 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       const now = Date.now();
       const result = await store.createUserWithWorkouts({
         id: userId,
-        username,
+        username: email,
         password_hash: hashPassword(password),
         role: 'ALUNO',
         created_at: now,
       });
 
       if (result === 'USERNAME_EXISTS') {
-        return jsonResponse({ error: 'Nome de usuário já está em uso.' }, 409);
+        return jsonResponse({ error: 'Este e-mail já está em uso.' }, 409);
       }
 
       const token = crypto.randomBytes(32).toString('base64url');
@@ -309,17 +318,17 @@ export async function handleApiRequest(req: Request): Promise<Response> {
 
     if (method === 'POST' && pathname === '/api/auth/login') {
       const body = await readJsonBody(req);
-      const username = String(body.username || '').trim().toLowerCase();
+      const identifier = String(body.email ?? body.username ?? '').trim().toLowerCase();
       const password = String(body.password || '');
-      if (!USERNAME_RE.test(username) || !password) {
-        return jsonResponse({ error: 'Informe usuário e senha válidos.' }, 400);
+      if (!isValidLoginIdentifier(identifier) || !password) {
+        return jsonResponse({ error: 'Informe um e-mail e senha válidos.' }, 400);
       }
 
       const { store } = await getActiveStore();
-      const user = await store.getUserByUsername(username);
+      const user = await store.getUserByUsername(identifier);
 
       if (!user || !verifyPassword(password, user.password_hash)) {
-        return jsonResponse({ error: 'Usuário ou senha incorretos.' }, 401);
+        return jsonResponse({ error: 'E-mail ou senha incorretos.' }, 401);
       }
       if (user.is_blocked) {
         return jsonResponse({ error: 'Conta bloqueada. Contate o administrador.' }, 403);
@@ -505,12 +514,12 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       }
       if (method === 'POST') {
         const body = await readJsonBody(req);
-        const username = String(body.username || '').trim().toLowerCase();
+        const email = String(body.email ?? body.username ?? '').trim().toLowerCase();
         const password = String(body.password || '');
         const role: UserRole = body.role === 'ADMIN' ? 'ADMIN' : 'ALUNO';
 
-        if (!USERNAME_RE.test(username)) {
-          return jsonResponse({ error: 'Usuário inválido (3–24 caracteres: a-z, 0-9, ., _, -).' }, 400);
+        if (!isValidEmail(email)) {
+          return jsonResponse({ error: 'Informe um e-mail válido (ex: nome@sobrenome.com).' }, 400);
         }
         if (password.length < 6) {
           return jsonResponse({ error: 'A senha deve ter no mínimo 6 caracteres.' }, 400);
@@ -518,13 +527,13 @@ export async function handleApiRequest(req: Request): Promise<Response> {
 
         const result = await auth.store.createUserWithWorkouts({
           id: crypto.randomUUID(),
-          username,
+          username: email,
           password_hash: hashPassword(password),
           role,
           created_at: Date.now(),
         });
         if (result === 'USERNAME_EXISTS') {
-          return jsonResponse({ error: 'Nome de usuário já está em uso.' }, 409);
+          return jsonResponse({ error: 'Este e-mail já está em uso.' }, 409);
         }
         const users = await auth.store.listUsers();
         return jsonResponse({ users });

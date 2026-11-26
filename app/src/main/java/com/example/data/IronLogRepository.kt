@@ -47,8 +47,8 @@ class IronLogRepository(context: Context) {
 
     suspend fun claimInitialAdmin(rawUsername: String, password: String, confirmPassword: String): Result<UserEntity> {
         val username = SecurityUtils.normalizeUsername(rawUsername)
-        if (!SecurityUtils.isValidUsername(username)) {
-            return Result.failure(IllegalArgumentException("Use 3–24 caracteres (a-z, 0-9, ., _, -)."))
+        if (!SecurityUtils.isValidEmail(username)) {
+            return Result.failure(IllegalArgumentException("Informe um e-mail válido (ex: nome@sobrenome.com)."))
         }
         if (password.length < 6) {
             return Result.failure(IllegalArgumentException("A senha deve ter no mínimo 6 caracteres."))
@@ -62,7 +62,7 @@ class IronLogRepository(context: Context) {
                 return@withTransaction Result.failure(IllegalStateException("A conta ADMIN inicial já foi configurada."))
             }
             if (userDao.findByUsername(username) != null) {
-                return@withTransaction Result.failure(IllegalArgumentException("Nome de usuário já está em uso."))
+                return@withTransaction Result.failure(IllegalArgumentException("Este e-mail já está em uso."))
             }
             val user = UserEntity(
                 id = UUID.randomUUID().toString(),
@@ -81,8 +81,8 @@ class IronLogRepository(context: Context) {
 
     suspend fun registerStudent(rawUsername: String, password: String, confirmPassword: String): Result<UserEntity> {
         val username = SecurityUtils.normalizeUsername(rawUsername)
-        if (!SecurityUtils.isValidUsername(username)) {
-            return Result.failure(IllegalArgumentException("Use 3–24 caracteres (a-z, 0-9, ., _, -)."))
+        if (!SecurityUtils.isValidEmail(username)) {
+            return Result.failure(IllegalArgumentException("Informe um e-mail válido (ex: nome@sobrenome.com)."))
         }
         if (password.length < 6) {
             return Result.failure(IllegalArgumentException("A senha deve ter no mínimo 6 caracteres."))
@@ -93,7 +93,7 @@ class IronLogRepository(context: Context) {
 
         return db.withTransaction {
             if (userDao.findByUsername(username) != null) {
-                return@withTransaction Result.failure(IllegalArgumentException("Nome de usuário já está em uso."))
+                return@withTransaction Result.failure(IllegalArgumentException("Este e-mail já está em uso."))
             }
             val user = UserEntity(
                 id = UUID.randomUUID().toString(),
@@ -112,14 +112,14 @@ class IronLogRepository(context: Context) {
 
     suspend fun login(rawUsername: String, password: String): Result<UserEntity> {
         val username = SecurityUtils.normalizeUsername(rawUsername)
-        if (!SecurityUtils.isValidUsername(username) || password.isEmpty()) {
-            return Result.failure(IllegalArgumentException("Informe usuário e senha válidos."))
+        if (!SecurityUtils.isValidLoginIdentifier(username) || password.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Informe um e-mail e senha válidos."))
         }
         val user = userDao.findByUsername(username)
-            ?: return Result.failure(IllegalArgumentException("Usuário ou senha incorretos."))
+            ?: return Result.failure(IllegalArgumentException("E-mail ou senha incorretos."))
 
         if (!SecurityUtils.verifyPassword(password, user.passwordHash)) {
-            return Result.failure(IllegalArgumentException("Usuário ou senha incorretos."))
+            return Result.failure(IllegalArgumentException("E-mail ou senha incorretos."))
         }
         if (user.isBlocked) {
             return Result.failure(IllegalStateException("Conta bloqueada. Contate o administrador."))
@@ -180,15 +180,15 @@ class IronLogRepository(context: Context) {
     ): Result<UserEntity> = runCatching {
         requireAdmin(callerId)
         val username = SecurityUtils.normalizeUsername(rawUsername)
-        require(SecurityUtils.isValidUsername(username)) {
-            "Usuário inválido (3–24 caracteres: a-z, 0-9, ., _, -)."
+        require(SecurityUtils.isValidEmail(username)) {
+            "Informe um e-mail válido (ex: nome@sobrenome.com)."
         }
         require(password.length >= 6) {
             "A senha deve ter no mínimo 6 caracteres."
         }
         db.withTransaction {
             if (userDao.findByUsername(username) != null) {
-                throw IllegalArgumentException("Nome de usuário já está em uso.")
+                throw IllegalArgumentException("Este e-mail já está em uso.")
             }
             val user = UserEntity(
                 id = UUID.randomUUID().toString(),

@@ -71,8 +71,10 @@ export function ProfileView({
       <div className="bg-[#121215] border border-[#27272e] rounded-2xl p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-[#9ca3af]">Usuário conectado · {user.role}</p>
-            <h2 className="text-xl font-bold text-[#f4f4f5] mt-0.5">@{user.username}</h2>
+            <p className="text-xs text-[#9ca3af]">Conta conectada · {user.role}</p>
+            <h2 className="text-lg font-bold text-[#f4f4f5] mt-0.5 break-all">
+              {user.username.includes('@') ? user.username : `@${user.username}`}
+            </h2>
           </div>
           {isAdmin && (
             <button
@@ -210,12 +212,13 @@ function AdminPanel({
         <form onSubmit={handleCreate} className="space-y-3">
           <div>
             <label className="block text-xs font-semibold text-[#9ca3af] mb-1">
-              Nome de usuário
+              E-mail
             </label>
             <input
-              type="text"
+              type="email"
+              inputMode="email"
               autoCapitalize="none"
-              placeholder="ex: aluno01"
+              placeholder="ex: nome@sobrenome.com"
               value={newUser}
               onChange={(e) => setNewUser(e.target.value)}
               required
@@ -274,7 +277,7 @@ function AdminPanel({
         </div>
         <input
           type="text"
-          placeholder="Filtrar por nome de usuário..."
+          placeholder="Filtrar por e-mail..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full min-h-[42px] bg-[#121215] border border-[#27272e] focus:border-[#a3e635] rounded-xl px-3.5 py-2 text-sm text-[#f4f4f5] outline-none"
@@ -283,6 +286,7 @@ function AdminPanel({
         {filtered.map((u) => {
           const isSelf = u.id === currentUserId;
           const blocked = u.is_blocked === 1;
+          const displayId = u.username.includes('@') ? u.username : `@${u.username}`;
           return (
             <div
               key={u.id}
@@ -290,8 +294,8 @@ function AdminPanel({
             >
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="font-bold text-sm text-[#f4f4f5]">
-                    @{u.username}
+                  <p className="font-bold text-sm text-[#f4f4f5] break-all">
+                    {displayId}
                     {isSelf ? ' (Você)' : ''}
                   </p>
                   <p className="text-xs text-[#9ca3af] font-mono tabular-nums mt-0.5">
@@ -345,8 +349,8 @@ function AdminPanel({
             className="w-full max-w-sm bg-[#121215] border border-[#27272e] rounded-2xl p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-bold text-[#f4f4f5] mb-3">
-              Redefinir senha: @{resetTarget.username}
+            <h3 className="text-base font-bold text-[#f4f4f5] mb-3 break-all">
+              Redefinir senha: {resetTarget.username.includes('@') ? resetTarget.username : `@${resetTarget.username}`}
             </h3>
             <form
               onSubmit={async (e) => {
@@ -404,7 +408,7 @@ function AdminPanel({
 
       {deleteTarget && (
         <ConfirmDialog
-          title={`Excluir @${deleteTarget.username}?`}
+          title={`Excluir ${deleteTarget.username.includes('@') ? deleteTarget.username : `@${deleteTarget.username}`}?`}
           body="Esta ação remove permanentemente o usuário e todos os seus treinos."
           confirmLabel="Excluir"
           danger

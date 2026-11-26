@@ -434,7 +434,8 @@ export default function App() {
       if (Array.isArray(res?.users)) {
         setAdminUsers(res.users);
       }
-      notify(`Conta @${username.trim().toLowerCase()} criada!`);
+      const clean = username.trim().toLowerCase();
+      notify(`Conta ${clean.includes('@') ? clean : `@${clean}`} criada!`);
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Erro ao criar usuário.', true);
     }
@@ -549,9 +550,9 @@ export default function App() {
                 })}
               </nav>
 
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-xs font-mono text-[#9ca3af] whitespace-nowrap">
-                  @{data.user.username}
+              <div className="flex items-center gap-3 shrink-0 min-w-0">
+                <span className="text-xs font-mono text-[#9ca3af] truncate max-w-[180px] sm:max-w-[260px]">
+                  {data.user.username.includes('@') ? data.user.username : `@${data.user.username}`}
                   {data.user.role === 'ADMIN' ? ' · ADMIN' : ''}
                 </span>
               </div>

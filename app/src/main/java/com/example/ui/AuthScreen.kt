@@ -107,7 +107,7 @@ fun AuthScreen(
                     fontWeight = FontWeight.ExtraBold
                 )
                 Text(
-                    text = "Defina o usuário e a senha do administrador. Esta conta gerencia os alunos e também registra seus próprios treinos.",
+                    text = "Defina o e-mail e a senha do administrador. Esta conta gerencia os alunos e também registra seus próprios treinos.",
                     color = TextMuted,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -115,8 +115,8 @@ fun AuthScreen(
                 IronTextField(
                     value = adminUser,
                     onValueChange = { adminUser = it },
-                    label = "Usuário ADMIN (a-z, 0-9, . _ -)",
-                    placeholder = "ex: admin"
+                    label = "E-mail do ADMIN",
+                    placeholder = "ex: nome@sobrenome.com"
                 )
                 Spacer(Modifier.height(10.dp))
                 IronTextField(
@@ -176,8 +176,8 @@ fun AuthScreen(
                     IronTextField(
                         value = loginUser,
                         onValueChange = { loginUser = it },
-                        label = "Nome de usuário",
-                        placeholder = "ex: joao.silva"
+                        label = "E-mail",
+                        placeholder = "ex: nome@sobrenome.com"
                     )
                     Spacer(Modifier.height(10.dp))
                     IronTextField(
@@ -205,8 +205,8 @@ fun AuthScreen(
                     IronTextField(
                         value = regUser,
                         onValueChange = { regUser = it },
-                        label = "Nome de usuário único (a-z, 0-9, . _ -)",
-                        placeholder = "ex: maria_fit"
+                        label = "E-mail (não precisa ser do Google)",
+                        placeholder = "ex: nome@sobrenome.com"
                     )
                     Spacer(Modifier.height(10.dp))
                     IronTextField(

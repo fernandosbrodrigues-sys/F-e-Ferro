@@ -84,11 +84,11 @@ fun ProfileScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Usuário conectado", color = TextMuted, fontSize = 12.sp)
+                    Text("Conta conectada", color = TextMuted, fontSize = 12.sp)
                     Text(
-                        text = "@${user.username}",
+                        text = com.example.data.SecurityUtils.formatDisplayIdentifier(user.username),
                         color = TextPrimary,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Black
                     )
                 }
@@ -213,8 +213,8 @@ private fun AdminPanelView(
             IronTextField(
                 value = newUsername,
                 onValueChange = { newUsername = it },
-                label = "Nome de usuário",
-                placeholder = "ex: aluno01"
+                label = "E-mail",
+                placeholder = "ex: nome@sobrenome.com"
             )
             Spacer(Modifier.height(8.dp))
             IronTextField(
@@ -270,11 +270,12 @@ private fun AdminPanelView(
             value = search,
             onValueChange = { search = it },
             label = "Buscar usuário",
-            placeholder = "Filtrar por nome..."
+            placeholder = "Filtrar por e-mail..."
         )
 
         filtered.forEach { u ->
             val isSelf = u.id == currentUserId
+            val displayId = com.example.data.SecurityUtils.formatDisplayIdentifier(u.username)
             IronCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -283,7 +284,7 @@ private fun AdminPanelView(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "@${u.username}${if (isSelf) " (Você)" else ""}",
+                            text = "$displayId${if (isSelf) " (Você)" else ""}",
                             color = TextPrimary,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.sp
@@ -337,7 +338,7 @@ private fun AdminPanelView(
         AlertDialog(
             onDismissRequest = { resetTarget = null },
             containerColor = Surface1,
-            title = { Text("Redefinir senha: @${rTarget.username}", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            title = { Text("Redefinir senha: ${com.example.data.SecurityUtils.formatDisplayIdentifier(rTarget.username)}", color = TextPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     IronTextField(
@@ -375,7 +376,7 @@ private fun AdminPanelView(
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             containerColor = Surface1,
-            title = { Text("Excluir @${dTarget.username}?", color = TextPrimary, fontWeight = FontWeight.Bold) },
+            title = { Text("Excluir ${com.example.data.SecurityUtils.formatDisplayIdentifier(dTarget.username)}?", color = TextPrimary, fontWeight = FontWeight.Bold) },
             text = { Text("Esta ação remove permanentemente o usuário e todos os seus treinos.", color = TextMuted) },
             confirmButton = {
                 TextButton(onClick = {

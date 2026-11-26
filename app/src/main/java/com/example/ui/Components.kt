@@ -440,7 +440,10 @@ fun BrandHeader(username: String? = null, role: String? = null) {
             }
         }
         if (username != null) {
-            IronBadge(text = "@$username", accent = role == "ADMIN")
+            IronBadge(
+                text = com.example.data.SecurityUtils.formatDisplayIdentifier(username),
+                accent = role == "ADMIN"
+            )
         }
     }
 }

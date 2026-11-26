@@ -396,7 +396,7 @@ class IronLogViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repo.createUserAsAdmin(uid, username, password, role)
                 .onSuccess {
-                    toast("Conta @${it.username} criada!")
+                    toast("Conta ${com.example.data.SecurityUtils.formatDisplayIdentifier(it.username)} criada!")
                     refreshAdminUsers()
                 }
                 .onFailure { toast(it.message ?: "Erro ao criar conta.", true) }

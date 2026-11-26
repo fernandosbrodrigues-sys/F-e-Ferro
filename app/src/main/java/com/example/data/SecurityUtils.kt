@@ -13,10 +13,20 @@ object SecurityUtils {
     private val random = SecureRandom()
 
     val USERNAME_REGEX = Regex("^[a-z0-9._-]{3,24}$")
+    val EMAIL_REGEX = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$")
 
     fun normalizeUsername(raw: String): String = raw.trim().lowercase()
 
-    fun isValidUsername(username: String): Boolean = USERNAME_REGEX.matches(username)
+    fun isValidEmail(email: String): Boolean =
+        email.length in 5..120 && EMAIL_REGEX.matches(email)
+
+    fun isValidLoginIdentifier(value: String): Boolean =
+        isValidEmail(value) || USERNAME_REGEX.matches(value)
+
+    fun isValidUsername(username: String): Boolean = isValidEmail(username)
+
+    fun formatDisplayIdentifier(value: String): String =
+        if (value.contains("@")) value else "@$value"
 
     fun hashPassword(password: String): String {
         val salt = ByteArray(SALT_BYTES)

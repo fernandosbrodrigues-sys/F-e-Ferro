@@ -20,11 +20,13 @@ class IronLogCoreTest {
     }
 
     @Test
-    fun usernameValidationEnforcesRules() {
-        assertTrue(SecurityUtils.isValidUsername("fernando.silva"))
-        assertTrue(SecurityUtils.isValidUsername("aluno_01"))
-        assertFalse(SecurityUtils.isValidUsername("ab"))
-        assertFalse(SecurityUtils.isValidUsername("user@email.com"))
+    fun emailValidationAndLegacyLoginEnforceRules() {
+        assertTrue(SecurityUtils.isValidEmail("nome@sobrenome.com"))
+        assertTrue(SecurityUtils.isValidEmail("aluno01@empresa.org"))
+        assertFalse(SecurityUtils.isValidEmail("ab"))
+        assertFalse(SecurityUtils.isValidEmail("sem-arroba.com"))
+        assertTrue(SecurityUtils.isValidLoginIdentifier("nome@sobrenome.com"))
+        assertTrue(SecurityUtils.isValidLoginIdentifier("admin"))
     }
 
     @Test

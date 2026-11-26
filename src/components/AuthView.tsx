@@ -75,19 +75,20 @@ export function AuthView({ hasAdmin, onClaimAdmin, onLogin, onRegister }: AuthVi
           <p className="text-xs font-semibold text-[#a3e635] mb-1">Configuração inicial</p>
           <h2 className="text-lg font-bold text-[#f4f4f5]">Criar conta ADMIN principal</h2>
           <p className="text-sm text-[#9ca3af] mt-1 mb-4">
-            Defina seu usuário e senha de administrador. Esta conta gerencia os alunos e também registra seus próprios treinos.
+            Defina o e-mail e a senha do administrador. Esta conta gerencia os alunos e também registra seus próprios treinos.
           </p>
 
           <form onSubmit={handleClaim} className="space-y-3.5">
             <div>
               <label className="block text-xs font-semibold text-[#9ca3af] mb-1.5">
-                Nome de usuário ADMIN (a-z, 0-9, . _ -)
+                E-mail do ADMIN
               </label>
               <input
-                type="text"
+                type="email"
+                inputMode="email"
                 autoCapitalize="none"
-                autoComplete="username"
-                placeholder="ex: admin"
+                autoComplete="email"
+                placeholder="ex: nome@sobrenome.com"
                 value={adminUser}
                 onChange={(e) => setAdminUser(e.target.value)}
                 required
@@ -165,13 +166,14 @@ export function AuthView({ hasAdmin, onClaimAdmin, onLogin, onRegister }: AuthVi
             <form onSubmit={handleLogin} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-[#9ca3af] mb-1.5">
-                  Nome de usuário
+                  E-mail
                 </label>
                 <input
                   type="text"
+                  inputMode="email"
                   autoCapitalize="none"
-                  autoComplete="username"
-                  placeholder="ex: joao.silva"
+                  autoComplete="email"
+                  placeholder="ex: nome@sobrenome.com"
                   value={loginUser}
                   onChange={(e) => setLoginUser(e.target.value)}
                   required
@@ -209,13 +211,14 @@ export function AuthView({ hasAdmin, onClaimAdmin, onLogin, onRegister }: AuthVi
             <form onSubmit={handleRegister} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-[#9ca3af] mb-1.5">
-                  Nome de usuário único (a-z, 0-9, . _ -)
+                  E-mail (não precisa ser do Google)
                 </label>
                 <input
-                  type="text"
+                  type="email"
+                  inputMode="email"
                   autoCapitalize="none"
-                  autoComplete="username"
-                  placeholder="ex: maria_fit"
+                  autoComplete="email"
+                  placeholder="ex: nome@sobrenome.com"
                   value={regUser}
                   onChange={(e) => setRegUser(e.target.value)}
                   required

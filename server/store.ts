@@ -1581,7 +1581,15 @@ function isMissingSchemaError(err: unknown): boolean {
 }
 
 export async function getActiveStore(): Promise<{ store: IronLogStore; status: StorageStatus }> {
+  const isVercel = process.env.VERCEL === '1';
+
   if (!supabaseStore) {
+    if (isVercel) {
+      throw Object.assign(
+        new Error('Banco de dados não configurado. Verifique SUPABASE_URL e SUPABASE_SECRET_KEY nas variáveis da Vercel.'),
+        { status: 503 }
+      );
+    }
     return {
       store: sqliteStore,
       status: {
@@ -1632,6 +1640,13 @@ export async function getActiveStore(): Promise<{ store: IronLogStore; status: S
         supabaseNeedsSchema: false,
       },
     };
+  }
+
+  if (isVercel) {
+    const message = cachedSupabaseNeedsSchema
+      ? 'O Supabase está conectado, mas o esquema do banco de dados precisa ser configurado.'
+      : 'Não foi possível conectar ao Supabase. Verifique as variáveis e a conexão do projeto.';
+    throw Object.assign(new Error(message), { status: 503 });
   }
 
   return {

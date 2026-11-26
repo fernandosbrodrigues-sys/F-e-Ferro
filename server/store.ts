@@ -1,7 +1,9 @@
+import 'dotenv/config';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { createAdminClient, createContextClient, resolveEnv, verifyAuth } from '@supabase/server/core';
+import type { SupabaseClient } from '@supabase/server/peer/supabase-js';
 import { DEFAULT_WORKOUT_SPLIT } from '../src/seedData.ts';
 import type {
   ActiveSessionPayload,
@@ -142,20 +144,43 @@ function normalizeSetPatch(current: SetLog, body: Record<string, unknown>) {
 // =============================================================================
 // SQLITE STORE (Local / Fallback)
 // =============================================================================
+type SqliteDb = import('node:sqlite').DatabaseSync;
+
 export class SqliteStore implements IronLogStore {
-  private db: DatabaseSync;
+  private db: SqliteDb | null = null;
+  private dbPath: string;
 
   constructor(dbPath = path.resolve(process.cwd(), 'ironlog.db')) {
+    this.dbPath = dbPath;
+  }
+
+  private async getDb(): Promise<SqliteDb> {
+    if (this.db) return this.db;
+
+    let DatabaseSyncCtor: typeof import('node:sqlite').DatabaseSync;
     try {
-      this.db = new DatabaseSync(dbPath);
+      const sqliteModule = `node:${'sqlite'}`;
+      const mod = (await import(/* @vite-ignore */ sqliteModule)) as typeof import('node:sqlite');
+      DatabaseSyncCtor = mod.DatabaseSync;
+    } catch {
+      const err = new Error(
+        'Banco de dados não configurado. Defina SUPABASE_URL e SUPABASE_SECRET_KEY (ou SUPABASE_PUBLISHABLE_KEY) nas variáveis de ambiente.'
+      ) as Error & { status?: number };
+      err.status = 503;
+      throw err;
+    }
+
+    let db: SqliteDb;
+    try {
+      db = new DatabaseSyncCtor(this.dbPath);
     } catch {
       const fallbackPath = path.join(os.tmpdir(), 'ironlog.db');
-      this.db = new DatabaseSync(fallbackPath);
+      db = new DatabaseSyncCtor(fallbackPath);
     }
-    this.db.exec('PRAGMA foreign_keys = ON;');
-    this.db.exec('PRAGMA journal_mode = WAL;');
-    this.db.exec('PRAGMA busy_timeout = 5000;');
-    this.db.exec(`
+    db.exec('PRAGMA foreign_keys = ON;');
+    db.exec('PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA busy_timeout = 5000;');
+    db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
@@ -261,18 +286,21 @@ export class SqliteStore implements IronLogStore {
       CREATE INDEX IF NOT EXISTS idx_set_logs_sess_ex ON set_logs(session_exercise_id, set_number);
       CREATE INDEX IF NOT EXISTS idx_weight_logs_user ON weight_logs(user_id, recorded_at DESC);
     `);
+
+    this.db = db;
+    return db;
   }
 
-  private seedWorkoutsForUser(userId: string) {
-    const existing = this.db.prepare('SELECT COUNT(*) AS cnt FROM workouts WHERE user_id = ?').get(userId) as {
+  private seedWorkoutsForUser(db: SqliteDb, userId: string) {
+    const existing = db.prepare('SELECT COUNT(*) AS cnt FROM workouts WHERE user_id = ?').get(userId) as {
       cnt: number;
     };
     if (existing.cnt > 0) return;
 
-    const insWorkout = this.db.prepare(
+    const insWorkout = db.prepare(
       'INSERT INTO workouts (id, user_id, day_of_week, code, name, subtitle, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
     );
-    const insExercise = this.db.prepare(
+    const insExercise = db.prepare(
       'INSERT INTO exercises (id, user_id, workout_id, exercise_key, name, target_sets, rep_min, rep_max, rest_min_sec, rest_max_sec, default_rest_sec, is_compound, alternatives_json, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
 
@@ -300,13 +328,13 @@ export class SqliteStore implements IronLogStore {
     }
   }
 
-  private recalculateSessionVolumeIfCompleted(userId: string, sessionId: string) {
-    const sess = this.db
+  private recalculateSessionVolumeIfCompleted(db: SqliteDb, userId: string, sessionId: string) {
+    const sess = db
       .prepare('SELECT status FROM workout_sessions WHERE id = ? AND user_id = ?')
       .get(sessionId, userId) as { status: string } | undefined;
     if (!sess || sess.status !== 'completed') return;
 
-    const sets = this.db
+    const sets = db
       .prepare('SELECT weight_kg, reps, completed FROM set_logs WHERE session_id = ? AND user_id = ?')
       .all(sessionId, userId) as Array<{ weight_kg: number | null; reps: number | null; completed: number }>;
 
@@ -314,32 +342,36 @@ export class SqliteStore implements IronLogStore {
       .filter((s) => s.completed === 1)
       .reduce((acc, s) => acc + Number(s.weight_kg || 0) * Number(s.reps || 0), 0);
 
-    this.db
+    db
       .prepare('UPDATE workout_sessions SET total_volume_kg = ? WHERE id = ? AND user_id = ?')
       .run(Number(total.toFixed(2)), sessionId, userId);
   }
 
   async countAdmins(): Promise<number> {
-    const row = this.db.prepare("SELECT COUNT(*) AS cnt FROM users WHERE role = 'ADMIN'").get() as { cnt: number };
+    const db = await this.getDb();
+    const row = db.prepare("SELECT COUNT(*) AS cnt FROM users WHERE role = 'ADMIN'").get() as { cnt: number };
     return row.cnt;
   }
 
   async getUserByUsername(username: string): Promise<UserAuthRecord | null> {
-    const row = this.db
+    const db = await this.getDb();
+    const row = db
       .prepare('SELECT id, username, password_hash, role, is_blocked, created_at FROM users WHERE username = ?')
       .get(username) as unknown as UserAuthRecord | undefined;
     return row || null;
   }
 
   async getUserById(id: string): Promise<UserProfile | null> {
-    const row = this.db
+    const db = await this.getDb();
+    const row = db
       .prepare('SELECT id, username, role, is_blocked, created_at FROM users WHERE id = ?')
       .get(id) as unknown as UserProfile | undefined;
     return row || null;
   }
 
   async resolveSession(token: string): Promise<{ user: UserProfile; token: string } | null> {
-    const row = this.db
+    const db = await this.getDb();
+    const row = db
       .prepare(
         `SELECT u.id, u.username, u.role, u.is_blocked, u.created_at
          FROM user_sessions s
@@ -359,55 +391,60 @@ export class SqliteStore implements IronLogStore {
     created_at: number;
     claimSingleAdmin?: boolean;
   }): Promise<'OK' | 'USERNAME_EXISTS' | 'ADMIN_EXISTS'> {
-    this.db.exec('BEGIN IMMEDIATE');
+    const db = await this.getDb();
+    db.exec('BEGIN IMMEDIATE');
     try {
       if (input.claimSingleAdmin) {
-        const admins = (this.db.prepare("SELECT COUNT(*) AS cnt FROM users WHERE role = 'ADMIN'").get() as {
+        const admins = (db.prepare("SELECT COUNT(*) AS cnt FROM users WHERE role = 'ADMIN'").get() as {
           cnt: number;
         }).cnt;
         if (admins > 0) {
-          this.db.exec('ROLLBACK');
+          db.exec('ROLLBACK');
           return 'ADMIN_EXISTS';
         }
       }
-      const existing = this.db.prepare('SELECT id FROM users WHERE username = ?').get(input.username);
+      const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(input.username);
       if (existing) {
-        this.db.exec('ROLLBACK');
+        db.exec('ROLLBACK');
         return 'USERNAME_EXISTS';
       }
-      this.db
+      db
         .prepare('INSERT INTO users (id, username, password_hash, role, is_blocked, created_at) VALUES (?, ?, ?, ?, 0, ?)')
         .run(input.id, input.username, input.password_hash, input.role, input.created_at);
-      this.seedWorkoutsForUser(input.id);
-      this.db.exec('COMMIT');
+      this.seedWorkoutsForUser(db, input.id);
+      db.exec('COMMIT');
       return 'OK';
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      db.exec('ROLLBACK');
       throw err;
     }
   }
 
   async createSession(token: string, userId: string, createdAt: number): Promise<void> {
-    this.db
+    const db = await this.getDb();
+    db
       .prepare('INSERT INTO user_sessions (token, user_id, created_at) VALUES (?, ?, ?)')
       .run(token, userId, createdAt);
   }
 
   async deleteSessionByToken(token: string): Promise<void> {
-    this.db.prepare('DELETE FROM user_sessions WHERE token = ?').run(token);
+    const db = await this.getDb();
+    db.prepare('DELETE FROM user_sessions WHERE token = ?').run(token);
   }
 
   async deleteSessionsByUser(userId: string): Promise<void> {
-    this.db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(userId);
+    const db = await this.getDb();
+    db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(userId);
   }
 
   async buildUserBootstrap(userId: string): Promise<BootstrapPayload> {
+    const db = await this.getDb();
     const adminCount = await this.countAdmins();
     const user = await this.getUserById(userId);
-    const workouts = this.db
+    const workouts = db
       .prepare('SELECT * FROM workouts WHERE user_id = ? ORDER BY sort_order ASC')
       .all(userId) as unknown as Workout[];
-    const rawExercises = this.db
+    const rawExercises = db
       .prepare('SELECT * FROM exercises WHERE user_id = ? ORDER BY sort_order ASC')
       .all(userId) as Array<Record<string, unknown>>;
     const exercises = rawExercises.map((e) => ({
@@ -415,20 +452,20 @@ export class SqliteStore implements IronLogStore {
       alternatives: parseAlternatives(e.alternatives_json),
     })) as unknown as Exercise[];
 
-    const sessions = this.db
+    const sessions = db
       .prepare('SELECT * FROM workout_sessions WHERE user_id = ? ORDER BY started_at DESC')
       .all(userId) as unknown as WorkoutSession[];
-    const setLogs = this.db
+    const setLogs = db
       .prepare('SELECT * FROM set_logs WHERE user_id = ? ORDER BY created_at ASC, set_number ASC')
       .all(userId) as unknown as SetLog[];
-    const weightLogs = this.db
+    const weightLogs = db
       .prepare('SELECT * FROM weight_logs WHERE user_id = ? ORDER BY recorded_at DESC, created_at DESC')
       .all(userId) as unknown as WeightLog[];
 
     const activeRow = sessions.find((s) => s.status === 'in_progress');
     let activeSession: ActiveSessionPayload | null = null;
     if (activeRow) {
-      const seRows = this.db
+      const seRows = db
         .prepare('SELECT * FROM session_exercises WHERE session_id = ? AND user_id = ? ORDER BY sort_order ASC')
         .all(activeRow.id, userId) as Array<Record<string, unknown>>;
       activeSession = {
@@ -456,19 +493,20 @@ export class SqliteStore implements IronLogStore {
   }
 
   async startWorkout(userId: string, workoutId: string): Promise<BootstrapPayload | 'NOT_FOUND'> {
-    const existing = this.db
+    const db = await this.getDb();
+    const existing = db
       .prepare("SELECT id FROM workout_sessions WHERE user_id = ? AND status = 'in_progress' LIMIT 1")
       .get(userId);
     if (existing) {
       return this.buildUserBootstrap(userId);
     }
 
-    const workout = this.db
+    const workout = db
       .prepare('SELECT * FROM workouts WHERE id = ? AND user_id = ?')
       .get(workoutId, userId) as { id: string; name: string } | undefined;
     if (!workout) return 'NOT_FOUND';
 
-    const exercises = this.db
+    const exercises = db
       .prepare('SELECT * FROM exercises WHERE workout_id = ? AND user_id = ? ORDER BY sort_order ASC')
       .all(workoutId, userId) as Array<{
       id: string;
@@ -484,18 +522,18 @@ export class SqliteStore implements IronLogStore {
 
     const now = Date.now();
     const sessionId = crypto.randomUUID();
-    this.db.exec('BEGIN IMMEDIATE');
+    db.exec('BEGIN IMMEDIATE');
     try {
-      this.db
+      db
         .prepare(
           "INSERT INTO workout_sessions (id, user_id, workout_id, workout_name, started_at, completed_at, status, total_volume_kg) VALUES (?, ?, ?, ?, ?, NULL, 'in_progress', 0)"
         )
         .run(sessionId, userId, workout.id, workout.name, now);
 
-      const insSe = this.db.prepare(
+      const insSe = db.prepare(
         'INSERT INTO session_exercises (id, user_id, session_id, workout_exercise_id, original_exercise_key, original_exercise_name, performed_exercise_key, performed_exercise_name, target_sets, rep_min, rep_max, default_rest_sec, alternatives_json, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       );
-      const insSet = this.db.prepare(
+      const insSet = db.prepare(
         'INSERT INTO set_logs (id, user_id, session_id, session_exercise_id, exercise_key, exercise_name, set_number, weight_kg, reps, rir, planned_rest_sec, actual_rest_sec, completed, completed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, 0, NULL, ?)'
       );
 
@@ -531,24 +569,25 @@ export class SqliteStore implements IronLogStore {
           );
         }
       }
-      this.db.exec('COMMIT');
+      db.exec('COMMIT');
       return this.buildUserBootstrap(userId);
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      db.exec('ROLLBACK');
       throw err;
     }
   }
 
   async getSessionDetail(userId: string, sessionId: string): Promise<ActiveSessionPayload | null> {
-    const sess = this.db
+    const db = await this.getDb();
+    const sess = db
       .prepare('SELECT * FROM workout_sessions WHERE id = ? AND user_id = ?')
       .get(sessionId, userId) as unknown as WorkoutSession | undefined;
     if (!sess) return null;
 
-    const seRows = this.db
+    const seRows = db
       .prepare('SELECT * FROM session_exercises WHERE session_id = ? AND user_id = ? ORDER BY sort_order ASC')
       .all(sessionId, userId) as Array<Record<string, unknown>>;
-    const sets = this.db
+    const sets = db
       .prepare('SELECT * FROM set_logs WHERE session_id = ? AND user_id = ? ORDER BY set_number ASC')
       .all(sessionId, userId) as unknown as SetLog[];
 
@@ -562,12 +601,13 @@ export class SqliteStore implements IronLogStore {
   }
 
   async finishSession(userId: string, sessionId: string): Promise<BootstrapPayload | 'NOT_FOUND'> {
-    const sess = this.db
+    const db = await this.getDb();
+    const sess = db
       .prepare('SELECT id FROM workout_sessions WHERE id = ? AND user_id = ?')
       .get(sessionId, userId);
     if (!sess) return 'NOT_FOUND';
 
-    const sets = this.db
+    const sets = db
       .prepare('SELECT weight_kg, reps, completed FROM set_logs WHERE session_id = ? AND user_id = ?')
       .all(sessionId, userId) as Array<{ weight_kg: number | null; reps: number | null; completed: number }>;
 
@@ -575,7 +615,7 @@ export class SqliteStore implements IronLogStore {
       .filter((s) => s.completed === 1)
       .reduce((acc, s) => acc + Number(s.weight_kg || 0) * Number(s.reps || 0), 0);
 
-    this.db
+    db
       .prepare("UPDATE workout_sessions SET status = 'completed', completed_at = ?, total_volume_kg = ? WHERE id = ? AND user_id = ?")
       .run(Date.now(), Number(total.toFixed(2)), sessionId, userId);
 
@@ -583,7 +623,8 @@ export class SqliteStore implements IronLogStore {
   }
 
   async discardSession(userId: string, sessionId: string): Promise<BootstrapPayload> {
-    this.db.prepare('DELETE FROM workout_sessions WHERE id = ? AND user_id = ?').run(sessionId, userId);
+    const db = await this.getDb();
+    db.prepare('DELETE FROM workout_sessions WHERE id = ? AND user_id = ?').run(sessionId, userId);
     return this.buildUserBootstrap(userId);
   }
 
@@ -592,38 +633,40 @@ export class SqliteStore implements IronLogStore {
     seId: string,
     opts: { key: string; name: string; defaultRestSec: number; updateAllSets: boolean }
   ): Promise<BootstrapPayload | 'NOT_FOUND'> {
-    const se = this.db.prepare('SELECT id FROM session_exercises WHERE id = ? AND user_id = ?').get(seId, userId);
+    const db = await this.getDb();
+    const se = db.prepare('SELECT id FROM session_exercises WHERE id = ? AND user_id = ?').get(seId, userId);
     if (!se) return 'NOT_FOUND';
 
-    this.db.exec('BEGIN IMMEDIATE');
+    db.exec('BEGIN IMMEDIATE');
     try {
-      this.db
+      db
         .prepare(
           'UPDATE session_exercises SET performed_exercise_key = ?, performed_exercise_name = ?, default_rest_sec = ? WHERE id = ? AND user_id = ?'
         )
         .run(opts.key, opts.name, opts.defaultRestSec, seId, userId);
 
       if (opts.updateAllSets) {
-        this.db
+        db
           .prepare('UPDATE set_logs SET exercise_key = ?, exercise_name = ? WHERE session_exercise_id = ? AND user_id = ?')
           .run(opts.key, opts.name, seId, userId);
       } else {
-        this.db
+        db
           .prepare(
             'UPDATE set_logs SET exercise_key = ?, exercise_name = ?, planned_rest_sec = ? WHERE session_exercise_id = ? AND user_id = ? AND completed = 0'
           )
           .run(opts.key, opts.name, opts.defaultRestSec, seId, userId);
       }
-      this.db.exec('COMMIT');
+      db.exec('COMMIT');
       return this.buildUserBootstrap(userId);
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      db.exec('ROLLBACK');
       throw err;
     }
   }
 
   async addSet(userId: string, seId: string): Promise<BootstrapPayload | 'NOT_FOUND'> {
-    const se = this.db.prepare('SELECT * FROM session_exercises WHERE id = ? AND user_id = ?').get(seId, userId) as
+    const db = await this.getDb();
+    const se = db.prepare('SELECT * FROM session_exercises WHERE id = ? AND user_id = ?').get(seId, userId) as
       | {
           id: string;
           session_id: string;
@@ -634,11 +677,11 @@ export class SqliteStore implements IronLogStore {
       | undefined;
     if (!se) return 'NOT_FOUND';
 
-    const maxRow = this.db
+    const maxRow = db
       .prepare('SELECT COALESCE(MAX(set_number), 0) AS max_num FROM set_logs WHERE session_exercise_id = ? AND user_id = ?')
       .get(seId, userId) as { max_num: number };
 
-    this.db
+    db
       .prepare(
         'INSERT INTO set_logs (id, user_id, session_id, session_exercise_id, exercise_key, exercise_name, set_number, weight_kg, reps, rir, planned_rest_sec, actual_rest_sec, completed, completed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, 0, NULL, ?)'
       )
@@ -658,45 +701,49 @@ export class SqliteStore implements IronLogStore {
   }
 
   async updateSet(userId: string, setId: string, body: Record<string, unknown>): Promise<SetLog | null> {
-    const current = this.db
+    const db = await this.getDb();
+    const current = db
       .prepare('SELECT * FROM set_logs WHERE id = ? AND user_id = ?')
       .get(setId, userId) as unknown as SetLog | undefined;
     if (!current) return null;
 
     const p = normalizeSetPatch(current, body);
-    this.db
+    db
       .prepare(
         'UPDATE set_logs SET weight_kg = ?, reps = ?, rir = ?, planned_rest_sec = ?, actual_rest_sec = ?, completed = ?, completed_at = ? WHERE id = ? AND user_id = ?'
       )
       .run(p.weight_kg, p.reps, p.rir, p.planned_rest_sec, p.actual_rest_sec, p.completed, p.completed_at, setId, userId);
 
-    this.recalculateSessionVolumeIfCompleted(userId, current.session_id);
-    return this.db
+    this.recalculateSessionVolumeIfCompleted(db, userId, current.session_id);
+    return db
       .prepare('SELECT * FROM set_logs WHERE id = ? AND user_id = ?')
       .get(setId, userId) as unknown as SetLog;
   }
 
   async deleteSet(userId: string, setId: string): Promise<BootstrapPayload> {
-    const current = this.db
+    const db = await this.getDb();
+    const current = db
       .prepare('SELECT session_id FROM set_logs WHERE id = ? AND user_id = ?')
       .get(setId, userId) as { session_id: string } | undefined;
     if (current) {
-      this.db.prepare('DELETE FROM set_logs WHERE id = ? AND user_id = ?').run(setId, userId);
-      this.recalculateSessionVolumeIfCompleted(userId, current.session_id);
+      db.prepare('DELETE FROM set_logs WHERE id = ? AND user_id = ?').run(setId, userId);
+      this.recalculateSessionVolumeIfCompleted(db, userId, current.session_id);
     }
     return this.buildUserBootstrap(userId);
   }
 
   async logWeight(userId: string, weightKg: number): Promise<BootstrapPayload> {
+    const db = await this.getDb();
     const now = Date.now();
-    this.db
+    db
       .prepare('INSERT INTO weight_logs (id, user_id, weight_kg, recorded_at, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(crypto.randomUUID(), userId, Number(weightKg.toFixed(2)), now, now);
     return this.buildUserBootstrap(userId);
   }
 
   async deleteWeight(userId: string, id: string): Promise<BootstrapPayload> {
-    this.db.prepare('DELETE FROM weight_logs WHERE id = ? AND user_id = ?').run(id, userId);
+    const db = await this.getDb();
+    db.prepare('DELETE FROM weight_logs WHERE id = ? AND user_id = ?').run(id, userId);
     return this.buildUserBootstrap(userId);
   }
 
@@ -704,7 +751,8 @@ export class SqliteStore implements IronLogStore {
     userId: string,
     assignments: Array<{ workoutId: string; dayOfWeek: number }>
   ): Promise<BootstrapPayload | 'INVALID'> {
-    const userWorkouts = this.db
+    const db = await this.getDb();
+    const userWorkouts = db
       .prepare('SELECT id, code FROM workouts WHERE user_id = ?')
       .all(userId) as Array<{ id: string; code: string }>;
     if (assignments.length !== userWorkouts.length) return 'INVALID';
@@ -721,9 +769,9 @@ export class SqliteStore implements IronLogStore {
       seenDays.add(item.dayOfWeek);
     }
 
-    this.db.exec('BEGIN IMMEDIATE');
+    db.exec('BEGIN IMMEDIATE');
     try {
-      const stmt = this.db.prepare(
+      const stmt = db.prepare(
         'UPDATE workouts SET day_of_week = ?, name = ?, sort_order = ? WHERE id = ? AND user_id = ?'
       );
       for (const item of assignments) {
@@ -736,35 +784,39 @@ export class SqliteStore implements IronLogStore {
           userId
         );
       }
-      this.db.exec('COMMIT');
+      db.exec('COMMIT');
       return this.buildUserBootstrap(userId);
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      db.exec('ROLLBACK');
       throw err;
     }
   }
 
   async listUsers(): Promise<UserProfile[]> {
-    return this.db
+    const db = await this.getDb();
+    return db
       .prepare('SELECT id, username, role, is_blocked, created_at FROM users ORDER BY created_at DESC')
       .all() as unknown as UserProfile[];
   }
 
   async toggleBlockUser(targetId: string, blocked: boolean): Promise<UserProfile[]> {
-    this.db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(blocked ? 1 : 0, targetId);
+    const db = await this.getDb();
+    db.prepare('UPDATE users SET is_blocked = ? WHERE id = ?').run(blocked ? 1 : 0, targetId);
     if (blocked) {
-      this.db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(targetId);
+      db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(targetId);
     }
     return this.listUsers();
   }
 
   async resetUserPassword(targetId: string, passwordHash: string): Promise<void> {
-    this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, targetId);
-    this.db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(targetId);
+    const db = await this.getDb();
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, targetId);
+    db.prepare('DELETE FROM user_sessions WHERE user_id = ?').run(targetId);
   }
 
   async deleteUser(targetId: string): Promise<UserProfile[]> {
-    this.db.prepare('DELETE FROM users WHERE id = ?').run(targetId);
+    const db = await this.getDb();
+    db.prepare('DELETE FROM users WHERE id = ?').run(targetId);
     return this.listUsers();
   }
 }
@@ -785,10 +837,12 @@ class SupabaseError extends Error {
 export class SupabaseStore implements IronLogStore {
   private restBase: string;
   private apiKey: string;
+  readonly client: SupabaseClient;
 
-  constructor(restBase: string, apiKey: string) {
+  constructor(restBase: string, apiKey: string, client: SupabaseClient) {
     this.restBase = restBase;
     this.apiKey = apiKey;
+    this.client = client;
   }
 
   private async req<T>(pathWithQuery: string, init: RequestInit = {}): Promise<T> {
@@ -825,7 +879,7 @@ export class SupabaseStore implements IronLogStore {
       if (errObj.code === '42501' || rawMsg.toLowerCase().includes('row-level security policy')) {
         throw new SupabaseError(
           403,
-          'Permissão bloqueada pelo RLS do Supabase. Execute o script de liberação (DISABLE ROW LEVEL SECURITY) no SQL Editor do Supabase ou configure SUPABASE_SERVICE_ROLE_KEY.',
+          'Permissão bloqueada pelo RLS do Supabase. Execute o script de liberação (DISABLE ROW LEVEL SECURITY) no SQL Editor do Supabase ou configure SUPABASE_SECRET_KEY.',
           errObj.code
         );
       }
@@ -1458,19 +1512,60 @@ export class SupabaseStore implements IronLogStore {
 }
 
 // =============================================================================
-// STORE SELECTOR (Uses Supabase when configured & schema exists, else SQLite)
+// STORE SELECTOR (Uses @supabase/server + Supabase when configured, else SQLite)
 // =============================================================================
+function sanitizeSupabaseKey(raw: string | undefined, varName: string): string {
+  const key = (raw || '').trim();
+  if (!key) return '';
+  if (key.includes('•')) {
+    console.warn(`FÉ & FERRO: ${varName} contém caracteres mascarados (••••) e foi ignorada.`);
+    return '';
+  }
+  return key;
+}
+
 const rawSupabaseUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
-const supabaseRestBase = rawSupabaseUrl
-  ? rawSupabaseUrl.endsWith('/rest/v1')
-    ? rawSupabaseUrl
-    : `${rawSupabaseUrl}/rest/v1`
-  : '';
-const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-const supabaseConfigured = Boolean(supabaseRestBase && supabaseKey);
+const supabaseRootUrl = rawSupabaseUrl.replace(/\/rest\/v1$/i, '');
+const supabaseRestBase = supabaseRootUrl ? `${supabaseRootUrl}/rest/v1` : '';
+const publishableKey =
+  sanitizeSupabaseKey(process.env.SUPABASE_PUBLISHABLE_KEY, 'SUPABASE_PUBLISHABLE_KEY') ||
+  sanitizeSupabaseKey(process.env.SUPABASE_ANON_KEY, 'SUPABASE_ANON_KEY');
+const secretKey =
+  sanitizeSupabaseKey(process.env.SUPABASE_SECRET_KEY, 'SUPABASE_SECRET_KEY') ||
+  sanitizeSupabaseKey(process.env.SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY');
+const activeSupabaseKey = secretKey || publishableKey;
+const supabaseConfigured = Boolean(supabaseRestBase && activeSupabaseKey);
+
+const resolvedServerEnv = supabaseRootUrl
+  ? resolveEnv({
+      url: supabaseRootUrl,
+      ...(publishableKey ? { publishableKeys: { default: publishableKey } } : {}),
+      ...(secretKey ? { secretKeys: { default: secretKey } } : {}),
+    })
+  : null;
+
+const supabaseServerClient =
+  supabaseConfigured && resolvedServerEnv?.data
+    ? secretKey
+      ? createAdminClient({ env: resolvedServerEnv.data })
+      : createContextClient({ env: resolvedServerEnv.data })
+    : null;
+
+export async function verifySupabaseJwtRequest(request: Request) {
+  if (!resolvedServerEnv?.data) return null;
+  const { data, error } = await verifyAuth(request, {
+    auth: 'user',
+    env: resolvedServerEnv.data,
+  });
+  if (error) return null;
+  return data;
+}
 
 const sqliteStore = new SqliteStore();
-const supabaseStore = supabaseConfigured ? new SupabaseStore(supabaseRestBase, supabaseKey) : null;
+const supabaseStore =
+  supabaseConfigured && supabaseServerClient
+    ? new SupabaseStore(supabaseRestBase, activeSupabaseKey, supabaseServerClient)
+    : null;
 
 let cachedSupabaseReady = false;
 let cachedSupabaseNeedsSchema = false;
@@ -1517,12 +1612,12 @@ export async function getActiveStore(): Promise<{ store: IronLogStore; status: S
       await supabaseStore.ping();
       cachedSupabaseReady = true;
       cachedSupabaseNeedsSchema = false;
-      console.log('IRON LOG: Conectado ao banco de dados Supabase.');
+      console.log('FÉ & FERRO: Conectado ao banco de dados Supabase via @supabase/server.');
     } catch (err) {
       if (isMissingSchemaError(err)) {
         cachedSupabaseNeedsSchema = true;
       } else {
-        console.warn('IRON LOG: Aviso ao consultar Supabase:', err instanceof Error ? err.message : err);
+        console.warn('FÉ & FERRO: Aviso ao consultar Supabase:', err instanceof Error ? err.message : err);
       }
     }
   }

@@ -422,13 +422,22 @@ fun BrandHeader(username: String? = null, role: String? = null) {
                     .background(Lime)
             )
             Spacer(Modifier.width(8.dp))
-            Text(
-                text = "IRON LOG",
-                color = TextPrimary,
-                fontWeight = FontWeight.Black,
-                fontSize = 18.sp,
-                letterSpacing = 1.sp
-            )
+            Column {
+                Text(
+                    text = "FÉ & FERRO",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "TREINE COM PROPÓSITO.",
+                    color = Lime,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 9.sp,
+                    letterSpacing = 1.1.sp
+                )
+            }
         }
         if (username != null) {
             IronBadge(text = "@$username", accent = role == "ADMIN")

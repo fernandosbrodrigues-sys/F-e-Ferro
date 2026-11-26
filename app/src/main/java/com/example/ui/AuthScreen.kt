@@ -77,7 +77,7 @@ fun AuthScreen(
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                text = "IRON LOG",
+                text = "FÉ & FERRO",
                 color = TextPrimary,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Black,
@@ -85,13 +85,15 @@ fun AuthScreen(
             )
         }
         Text(
-            text = "Diário de Treinamento • Hipertrofia",
-            color = TextMuted,
-            fontSize = 13.sp,
+            text = "TREINE COM PROPÓSITO.",
+            color = Lime,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 22.dp)
+                .padding(top = 6.dp, bottom = 22.dp)
         )
 
         if (!hasAdmin) {

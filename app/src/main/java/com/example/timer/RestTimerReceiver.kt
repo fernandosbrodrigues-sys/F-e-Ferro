@@ -61,7 +61,7 @@ class RestTimerReceiver : BroadcastReceiver() {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("IRON LOG – Descanso finalizado!")
+            .setContentTitle("FÉ & FERRO – Descanso finalizado!")
             .setContentText("Hora da próxima série: $exerciseName")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)

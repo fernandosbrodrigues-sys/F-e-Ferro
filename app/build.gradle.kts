@@ -82,6 +82,10 @@ secrets {
   ignoreList.add("APP_URL")
   ignoreList.add("SUPABASE_URL")
   ignoreList.add("SUPABASE_ANON_KEY")
+  ignoreList.add("SUPABASE_SERVICE_ROLE_KEY")
+  ignoreList.add("SUPABASE_PUBLISHABLE_KEY")
+  ignoreList.add("SUPABASE_SECRET_KEY")
+  ignoreList.add("SUPABASE_JWKS_URL")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

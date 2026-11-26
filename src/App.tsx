@@ -108,9 +108,11 @@ export default function App() {
 
   useEffect(() => {
     refreshBootstrap()
-      .catch(() => {})
+      .catch((err) => {
+        notify(err instanceof Error ? err.message : 'Erro ao conectar com o servidor.', true);
+      })
       .finally(() => setLoading(false));
-  }, [refreshBootstrap]);
+  }, [refreshBootstrap, notify]);
 
   // ===========================================================================
   // REST TIMER LOOP (resilient to screen lock via absolute timestamps)
@@ -498,7 +500,7 @@ export default function App() {
 
       {loading ? (
         <div className="min-h-dvh flex items-center justify-center text-sm text-[#9ca3af]">
-          Carregando IRON LOG...
+          Carregando FÉ &amp; FERRO...
         </div>
       ) : !data.user ? (
         <AuthView
@@ -510,14 +512,19 @@ export default function App() {
       ) : (
         <>
           {/* Header: Mobile compact top bar / Desktop 3-zone top bar */}
-          <header className="sticky top-0 z-30 h-[52px] lg:h-[60px] bg-[#09090b]/90 backdrop-blur-md border-b border-[#27272e]">
+          <header className="sticky top-0 z-30 h-[56px] lg:h-[64px] bg-[#09090b]/90 backdrop-blur-md border-b border-[#27272e]">
             <div className="max-w-5xl mx-auto h-full px-4 flex items-center justify-between gap-8">
-              <span
-                className="text-xl font-extrabold tracking-wider text-[#f4f4f5] whitespace-nowrap shrink-0"
-                style={{ fontFamily: 'var(--font-display)' }}
-              >
-                IRON LOG
-              </span>
+              <div className="flex flex-col leading-none shrink-0">
+                <span
+                  className="text-xl font-extrabold tracking-wider text-[#f4f4f5] whitespace-nowrap"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  FÉ &amp; FERRO
+                </span>
+                <span className="text-[9px] font-bold tracking-[0.14em] text-[#a3e635] whitespace-nowrap mt-0.5">
+                  TREINE COM PROPÓSITO.
+                </span>
+              </div>
 
               <nav className="hidden lg:flex items-center gap-6">
                 {navItems.map((item) => {

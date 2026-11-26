@@ -18,6 +18,6 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["src", "server.ts", "vite.config.ts"],
+  "include": ["src", "server", "netlify", "server.ts", "vite.config.ts"],
   "exclude": ["dist", "app", "gradle"]
 }

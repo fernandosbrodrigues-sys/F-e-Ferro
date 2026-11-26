@@ -62,11 +62,11 @@ export function AuthView({ hasAdmin, onClaimAdmin, onLogin, onRegister }: AuthVi
             className="text-3xl font-extrabold tracking-wider text-[#f4f4f5]"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            IRON LOG
+            FÉ &amp; FERRO
           </h1>
         </div>
-        <p className="text-xs text-[#9ca3af] mt-1 tracking-wide">
-          Diário de Treinamento · Hipertrofia
+        <p className="text-xs font-bold text-[#a3e635] mt-1.5 tracking-[0.16em]">
+          TREINE COM PROPÓSITO.
         </p>
       </div>
 

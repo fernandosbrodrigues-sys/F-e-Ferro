@@ -184,7 +184,7 @@ export function playRestCompleteAlert() {
 
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('IRON LOG – Descanso finalizado', {
+      new Notification('FÉ & FERRO – Descanso finalizado', {
         body: 'Hora da próxima série.',
       });
     }

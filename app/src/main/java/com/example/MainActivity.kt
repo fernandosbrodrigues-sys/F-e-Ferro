@@ -142,7 +142,7 @@ private fun IronLogRoot(viewModel: IronLogViewModel) {
         when {
             state.isBooting -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Carregando IRON LOG...", color = TextMuted, fontSize = 14.sp)
+                    Text("Carregando FÉ & FERRO...", color = TextMuted, fontSize = 14.sp)
                 }
             }
 

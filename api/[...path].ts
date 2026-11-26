@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleApiRequest } from '../server/router.ts';
+import { handleApiRequest } from '../server/router';
 
 // Vercel must leave the request body untouched so it can be converted to a Web Request.
 export const config = {

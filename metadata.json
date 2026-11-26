@@ -1,0 +1,6 @@
+{
+  "name": "IRON LOG",
+  "description": "Diário de treinamento de musculação com foco em hipertrofia, dupla progressão, cronômetro de descanso e controle de usuários.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
